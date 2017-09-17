@@ -19,12 +19,12 @@ from subprocess import check_output
 from subprocess import call
 
 from keras.utils import np_utils
+from sklearn.cross_validation import train_test_split
 
 import math
 import tensorflow.contrib.slim as slim
 
 use_cache = 1
-# color type: 1 - grey, 3 - rgb
 color_type_global = 1
 
 def get_driver_data():
@@ -119,7 +119,9 @@ def restore_data(path):
     return data
 
 
-
+def split_validation_set(train, target, test_size=0.25):
+    X_train, X_test, y_train, y_test = train_test_split(train, target, test_size=test_size)
+    return X_train, y_train , X_test, y_test
 
 
 
@@ -195,7 +197,6 @@ unique_list_train = ['p002', 'p012', 'p014', 'p015', 'p016', 'p021', 'p022', 'p0
 
 
 
-tf.reset_default_graph()
 
 
 # Convolutional Layer 1.
@@ -262,6 +263,8 @@ def new_fc_layer(input,
 
     return layer
 
+tf.reset_default_graph()
+
 
 x  = tf.placeholder(tf.float32, shape=[None, 1, 64, 64])
 x_image = tf.reshape(x , [-1 ,img_size, img_size, num_channels ])
@@ -290,12 +293,22 @@ accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 session = tf.Session()
 session.run(tf.global_variables_initializer())
 
+x_train , y_train , x_valid, y_valid = split_validation_set(train_data , train_target)
 
-feed_dict_train = {x:train_data[:10000] , y_true:train_target[:10000]}
-session.run(optimizer, feed_dict=feed_dict_train)
+
+
+n_samples = len(x_train)
+batch_size = 512
+for batch in range(int(n_samples/batch_size)):
+    print("Batch number is " , batch)
+    batch_x = x_train[batch * batch_size: (1 + batch) * batch_size]
+    batch_y = y_train[batch * batch_size: (1 + batch) * batch_size]
+
+
+    feed_dict_train = {x:batch_x , y_true:batch_y}
+    session.run(optimizer, feed_dict=feed_dict_train)
 
 acc = session.run(accuracy, feed_dict=feed_dict_train)
-print(acc)
 
 
 
