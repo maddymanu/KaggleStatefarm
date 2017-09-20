@@ -120,6 +120,7 @@ def restore_data(path):
 
 
 def split_validation_set(train, target, test_size=0.25):
+    print(target.shape)
     X_train, X_test, y_train, y_test = train_test_split(train, target, test_size=test_size)
     return X_train, y_train , X_test, y_test
 
@@ -266,15 +267,18 @@ def new_fc_layer(input,
 tf.reset_default_graph()
 
 
-x  = tf.placeholder(tf.float32, shape=[None, 1, 64, 64])
+x  = tf.placeholder(tf.float32, shape=[None, 1, 64, 64] , name="x")
 x_image = tf.reshape(x , [-1 ,img_size, img_size, num_channels ])
-y_true = tf.placeholder(tf.float32, shape=[None, num_classes])
+y_true = tf.placeholder(tf.float32, shape=[None, num_classes] , name="y")
 y_true_cls = tf.argmax(y_true, dimension=1)
 
 l1, w1 = new_conv_layer(x_image, num_channels, filter_size=filter_size1, num_filters=num_filters1, use_pooling=True)
 l2, w2 = new_conv_layer(l1, num_filters1, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
+l3, w3 = new_conv_layer(l2, num_filters2, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
+l4, w4 = new_conv_layer(l3, num_filters2, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
 
-l_flat , num_f = flatten_layer(l2)
+
+l_flat , num_f = flatten_layer(l4)
 l_fc1 = new_fc_layer(l_flat, num_inputs=num_f , num_outputs=num_classes , use_relu=True)
 
 y_pred = tf.nn.softmax(l_fc1)
@@ -295,20 +299,24 @@ session.run(tf.global_variables_initializer())
 
 x_train , y_train , x_valid, y_valid = split_validation_set(train_data , train_target)
 
-
+print(x_valid[0].shape , y_valid[0].shape)
 
 n_samples = len(x_train)
-batch_size = 512
-for batch in range(int(n_samples/batch_size)):
-    print("Batch number is " , batch)
-    batch_x = x_train[batch * batch_size: (1 + batch) * batch_size]
-    batch_y = y_train[batch * batch_size: (1 + batch) * batch_size]
+print(n_samples)
+batch_size = 64
+for i in range(500):
+    for batch in range(int(n_samples/batch_size)):
+        batch_x = x_train[batch * batch_size: (1 + batch) * batch_size]
+        batch_y = y_train[batch * batch_size: (1 + batch) * batch_size]
 
 
-    feed_dict_train = {x:batch_x , y_true:batch_y}
-    session.run(optimizer, feed_dict=feed_dict_train)
+        feed_dict_train = {x:batch_x , y_true:batch_y}
+        session.run(optimizer, feed_dict=feed_dict_train)
 
-acc = session.run(accuracy, feed_dict=feed_dict_train)
+
+    feed_dict_test = {x: x_valid[:31], y_true: y_valid[:31]}
+    acc = session.run(accuracy, feed_dict=feed_dict_test)
+    print(i , acc)
 
 
 
