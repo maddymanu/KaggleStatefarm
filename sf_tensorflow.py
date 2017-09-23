@@ -17,12 +17,14 @@ import time
 import glob
 from subprocess import check_output
 from subprocess import call
-
+import datetime
+import itertools
 from keras.utils import np_utils
 from sklearn.cross_validation import train_test_split
 
 import math
 import tensorflow.contrib.slim as slim
+from sklearn.metrics import log_loss
 
 use_cache = 1
 color_type_global = 1
@@ -172,7 +174,17 @@ def read_and_normalize_test_data(img_rows, img_cols, color_type=1):
     print(test_data.shape[0], 'test samples')
     return test_data, test_id
 
-
+def create_submission(predictions, test_id, info):
+    result1 = pd.DataFrame(predictions, columns=['c0', 'c1', 'c2', 'c3',
+                                                 'c4', 'c5', 'c6', 'c7',
+                                                 'c8', 'c9'])
+    result1.loc[:, 'img'] = pd.Series(test_id, index=result1.index)
+    now = datetime.datetime.now()
+    if not os.path.isdir('subm'):
+        os.mkdir('subm')
+    suffix = info + '_' + str(now.strftime("%Y-%m-%d-%H-%M"))
+    sub_file = os.path.join('subm', 'submission_' + suffix + '.csv')
+    result1.to_csv(sub_file, index=False)
 
 
 def weigths(shape):
@@ -208,6 +220,9 @@ num_filters1 = 16         # There are 16 of these filters.
 filter_size2 = 5          # Convolution filters are 5 x 5 pixels.
 num_filters2 = 36         # There are 36 of these filters.
 
+num_filters3 = 56         # There are 36 of these filters.
+
+
 # Fully-connected layer.
 fc_size = 128
 
@@ -237,6 +252,7 @@ def new_conv_layer(input, num_input_channels, filter_size, num_filters, use_pool
     if use_pooling:
         layer = tf.nn.max_pool(value=layer, ksize=[1,2,2,1] , strides=[1,2,2,1] , padding="SAME")
 
+    layer = tf.nn.dropout(layer, keep_prob=0.8)
     layer = tf.nn.relu(layer)
     return layer, w
 
@@ -264,6 +280,25 @@ def new_fc_layer(input,
 
     return layer
 
+
+n_samples_test= test_data.shape[0]
+batch_size = 64
+def predict_test_data_batch():
+
+    y_full_test = []
+    print("batches = ", int(n_samples_test/batch_size))
+    for batch in range(int(n_samples_test/batch_size)+1):
+        if n_samples_test <=  ((1 + batch) * batch_size):
+            batch_x = test_data[batch * batch_size:]
+        else:
+            batch_x = test_data[batch * batch_size: (1 + batch) * batch_size]
+
+        predictions = session.run(y_pred, feed_dict={x: batch_x})
+        y_full_test.append(predictions)
+
+    flat_list = list(itertools.chain(*y_full_test))
+    create_submission(flat_list, test_id, "sample")
+
 tf.reset_default_graph()
 
 
@@ -276,9 +311,10 @@ l1, w1 = new_conv_layer(x_image, num_channels, filter_size=filter_size1, num_fil
 l2, w2 = new_conv_layer(l1, num_filters1, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
 l3, w3 = new_conv_layer(l2, num_filters2, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
 l4, w4 = new_conv_layer(l3, num_filters2, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
+l5, w5 = new_conv_layer(l4, num_filters2, filter_size=filter_size2, num_filters=num_filters2, use_pooling=True)
 
 
-l_flat , num_f = flatten_layer(l4)
+l_flat , num_f = flatten_layer(l5)
 l_fc1 = new_fc_layer(l_flat, num_inputs=num_f , num_outputs=num_classes , use_relu=True)
 
 y_pred = tf.nn.softmax(l_fc1)
@@ -298,13 +334,27 @@ session = tf.Session()
 session.run(tf.global_variables_initializer())
 
 x_train , y_train , x_valid, y_valid = split_validation_set(train_data , train_target)
-
-print(x_valid[0].shape , y_valid[0].shape)
-
 n_samples = len(x_train)
-print(n_samples)
-batch_size = 64
-for i in range(500):
+
+
+def validate():
+    n_samples_valid = len(x_valid)
+    y_true = []
+    all_preds = []
+
+
+    for batch in range(int(n_samples_valid/batch_size)):
+        batch_x = x_valid[batch * batch_size: (1 + batch) * batch_size]
+        batch_y = y_valid[batch * batch_size: (1 + batch) * batch_size]
+
+        predictions = session.run(y_pred, feed_dict={x: batch_x})
+        y_true.append(batch_y)
+        all_preds.append(predictions)
+    score = log_loss(list(itertools.chain(*y_true)), list(itertools.chain(*all_preds)))
+    print(score)
+
+for i in range(400):
+    print("training epoch: " , i)
     for batch in range(int(n_samples/batch_size)):
         batch_x = x_train[batch * batch_size: (1 + batch) * batch_size]
         batch_y = y_train[batch * batch_size: (1 + batch) * batch_size]
@@ -313,10 +363,21 @@ for i in range(500):
         feed_dict_train = {x:batch_x , y_true:batch_y}
         session.run(optimizer, feed_dict=feed_dict_train)
 
+    if (i%10==0):
+        feed_dict_test = {x: x_valid[:31], y_true: y_valid[:31]}
+        acc = session.run(accuracy, feed_dict=feed_dict_test)
+        predictions = session.run(y_pred, feed_dict={x: x_valid[:300]})
+        score = log_loss(y_valid[:300], predictions)
 
-    feed_dict_test = {x: x_valid[:31], y_true: y_valid[:31]}
-    acc = session.run(accuracy, feed_dict=feed_dict_test)
-    print(i , acc)
+        print(i, score)
+        # predict_test_data_batch()
+        # validate()
+
+
+
+
+
+
 
 
 
